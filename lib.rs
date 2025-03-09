@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use std::mem::size_of;
 
 declare_id!("");
@@ -155,7 +156,7 @@ pub mod xen_blocks_hash_market {
         let order = &mut ctx.accounts.order;
         order.id = order_id;
         order.order_type = OrderType::Buy;
-        order.buyer = ctx.accounts.buyer.key();
+        order.buyer = Some(ctx.accounts.buyer.key());
         order.seller = None; // Will be filled when accepted
         order.xnm_amount = xnm_amount;
         order.price = price;
@@ -344,7 +345,7 @@ pub mod xen_blocks_hash_market {
         }
 
         // Update order
-        order.buyer = ctx.accounts.buyer.key();
+        order.buyer = Some(ctx.accounts.buyer.key());
         order.xnm_amount = xnm_amount;
         order.eth_address = eth_address;
         order.status = OrderStatus::InProgress;
@@ -428,7 +429,7 @@ pub mod xen_blocks_hash_market {
             ErrorCode::InvalidOrderStatus
         );
         require!(
-            order.buyer == ctx.accounts.buyer.key(),
+            order.buyer == Some(ctx.accounts.buyer.key()),
             ErrorCode::Unauthorized
         );
 
@@ -523,7 +524,7 @@ pub mod xen_blocks_hash_market {
         match order.order_type {
             OrderType::Buy => {
                 require!(
-                    order.buyer == ctx.accounts.caller.key(),
+                    order.buyer == Some(ctx.accounts.caller.key()),
                     ErrorCode::Unauthorized
                 );
 
@@ -778,7 +779,7 @@ pub struct MarketState {
 pub struct Order {
     pub id: u64,                   // Unique order ID
     pub order_type: OrderType,     // Buy or Sell order
-    pub buyer: Pubkey,             // Buyer's wallet address
+    pub buyer: Option<Pubkey>,     // Buyer's wallet address
     pub seller: Option<Pubkey>,    // Seller's wallet address (None until accepted)
     pub xnm_amount: u64,           // Amount of XNM tokens
     pub min_xnm_amount: u64,       // Min XNM amount for sell orders
@@ -843,6 +844,8 @@ pub struct Initialize<'info> {
     pub escrow_token_account: Account<'info, TokenAccount>,
 
     pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
 // Context for updating platform parameters
@@ -1033,7 +1036,7 @@ pub struct CompleteOrder<'info> {
     )]
     pub order: Account<'info, Order>,
 
-    #[account(mut, constraint = buyer.key() == order.buyer)]
+    #[account(mut, constraint = order.buyer.is_some() && buyer.key() == order.buyer.unwrap())]
     pub buyer: Signer<'info>,
 
     #[account(
